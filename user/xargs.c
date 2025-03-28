@@ -38,8 +38,12 @@ int main(int argc, char *argv[]){
         args[input_args++] = &buf[arg_start];
     }
 
-    char* exec_argv[argc];
-    memmove(exec_argv, argv + 1, (argc - 1) * sizeof(char*));
+    char* exec_argv[argc + 1];
+    exec_argv[argc] = 0; // exec 需要null终止的argv数组
+
+    for(int i=1; i<argc; ++i){
+        exec_argv[i-1] = argv[i];
+    }
 
     for(int i=0; i<input_args; ++i){
         if(fork() == 0){
