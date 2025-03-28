@@ -3,16 +3,10 @@
 #include "user/user.h"
 #include "kernel/fs.h"
 
-char* basename(char* path) {
-    char* p;
+char* basename(char*);
+int match(char*, char*);
 
-    for (p = path + strlen(path); p >= path && *p != '/'; p--);
-    p++;
-
-    return p;
-}
-
-void find(char* path, char* filename) {
+void find(char* path, char* pattern) {
     char buf[512], *p;
     int fd;
     struct dirent de;
@@ -31,7 +25,7 @@ void find(char* path, char* filename) {
 
     switch (st.type) {
         case T_FILE:
-            if (strcmp(basename(path), filename) == 0) {
+            if (match(pattern, basename(path))) {
                 printf("%s\n", path);
             }
             break;
@@ -50,7 +44,7 @@ void find(char* path, char* filename) {
                 int name_len = strlen(de.name);
                 memmove(p, de.name, name_len);
                 p[name_len] = 0;
-                find(buf, filename);
+                find(buf, pattern);
             }
             break;
     }
@@ -59,7 +53,7 @@ void find(char* path, char* filename) {
 
 int main(int argc, char* argv[]) {
     if (argc <= 1) {
-        fprintf(2, "usage: find dir filename\n");
+        fprintf(2, "usage: find path pattern\n");
         exit(1);
     }
 
@@ -70,4 +64,36 @@ int main(int argc, char* argv[]) {
 
     find(argv[1], argv[2]);
     exit(0);
+}
+
+char* basename(char* path) {
+    char* p;
+
+    for (p = path + strlen(path); p >= path && *p != '/'; p--);
+    p++;
+
+    return p;
+}
+
+
+int matchstar(int, char*, char*);
+
+int match(char *re, char *text){
+    if(re[0] == '\0')
+        return *text == '\0';
+    if(re[1] == '*')
+        return matchstar(re[0], re+2, text);
+    if(*text!='\0' && (re[0]=='.' || re[0]==*text))
+        return match(re+1, text+1);
+    return 0;
+}
+
+// matchstar: search for c*re at beginning of text
+int matchstar(int c, char *re, char *text)
+{
+  do{  // a * matches zero or more instances
+    if(match(re, text))
+      return 1;
+  }while(*text!='\0' && (*text++==c || c=='.'));
+  return 0;
 }
