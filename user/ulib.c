@@ -14,12 +14,37 @@ strcpy(char *s, const char *t)
   return os;
 }
 
+char*
+strncpy(char *s, const char *t, uint n)
+{
+  int i;
+  for(i=0; i<n && t[i]; ++i){
+    s[i] = t[i];
+  }
+
+  while(i < n)
+    s[i++] = 0;
+  return s; 
+}
+
 int
 strcmp(const char *p, const char *q)
 {
   while(*p && *p == *q)
     p++, q++;
   return (uchar)*p - (uchar)*q;
+}
+
+int
+strncmp(const char *p, const char *q, uint n)
+{
+  for(int i=0; i<n; ++i){
+    if(p[i] != q[i])
+      return (uchar)p[i] - (uchar)q[i];
+    if(p[i] == 0)
+      return 0;
+  }
+  return 0;
 }
 
 uint

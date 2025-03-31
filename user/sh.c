@@ -4,6 +4,7 @@
 #include "user/user.h"
 #include "kernel/fcntl.h"
 #include "kernel/stat.h"
+#include "kernel/fs.h"
 
 // Parsed command representation
 #define EXEC  1
@@ -13,6 +14,10 @@
 #define BACK  5
 
 #define MAXARGS 10
+#define MATCH_COUNT 10
+
+char whitespace[] = " \t\r\n\v";
+char symbols[] = "<|>&;()";
 
 struct cmd {
   int type;
@@ -53,6 +58,7 @@ struct backcmd {
 int fork1(void);  // Fork but panics on failure.
 void panic(char*);
 struct cmd *parsecmd(char*);
+int find_matches(char*, char[][DIRSIZ], int);
 
 // Execute cmd.  Never returns.
 void
@@ -141,11 +147,105 @@ getcmd(char *buf, int nbuf)
   }
   if(st.type != T_FILE)
     fprintf(2, "$ ");
+  
+  // 替换 gets() 以支持 Tab 补全
+  char c;
+  int i = 0;
   memset(buf, 0, nbuf);
-  gets(buf, nbuf);
-  if(buf[0] == 0) // EOF
+  
+  while(i < nbuf-1) {
+    if(read(0, &c, 1) != 1)
+      break;
+      
+    if(c == '\t') {  // Tab 键
+      // 找出当前要补全的部分
+      int j = i;
+      while(j > 0 && !strchr(whitespace, buf[j-1]) && !strchr(symbols, buf[j-1]))
+        j--;
+        
+      char prefix[DIRSIZ+1] = {0};
+      int prefix_len = i - j;
+      if(prefix_len > 0) {
+        strncpy(prefix, buf+j, prefix_len);
+        prefix[prefix_len] = 0;
+        
+        // 查找匹配项
+        char matches[10][DIRSIZ];  // 最多显示10个匹配项
+        int match_count = find_matches(prefix, matches, 10);
+        
+        if(match_count == 1) {
+          // 只有一个匹配项，直接补全
+          strcpy(buf+j, matches[0]);
+          i = j + strlen(matches[0]);
+          
+          // 清除当前行并重绘
+          printf("\r\033[K$ %s", buf);  // ANSI 控制序列清除行
+        } 
+        else if(match_count > 1) {
+          // 多个匹配项，显示所有可能选项
+          printf("\n");
+          for(int k = 0; k < match_count; k++) {
+            printf("%s  ", matches[k]);
+          }
+          printf("\n$ %s", buf);
+        }
+      }
+      continue;
+    }
+    
+    if(c == '\n' || c == '\r') {
+      buf[i] = '\n';
+      i++;
+      break;
+    }
+    
+    if(c == '\x7f' || c == 'H' - '@') {  // Backspace
+      if(i > 0) {
+        buf[--i] = '\0';
+        printf("\b \b");
+      }
+      continue;
+    }
+    
+    buf[i] = c;
+    i++;
+  }
+  
+  buf[i] = '\0';
+  
+  if(buf[0] == 0)  // 空行
     return -1;
+    
   return 0;
+}
+
+// 查找匹配前缀的文件
+int find_matches(char *prefix, char matches[][DIRSIZ], int max_matches) {
+  int fd, match_count = 0;
+  struct dirent de;
+  
+  if((fd = open(".", 0)) < 0) {
+    fprintf(2, "tab completion: cannot open current directory\n");
+    return 0;
+  }
+  
+  int prefix_len = strlen(prefix);
+  
+  while(read(fd, &de, sizeof(de)) == sizeof(de)) {
+    if(de.inum == 0)
+      continue;
+      
+    // 检查文件名是否匹配前缀
+    if(strncmp(prefix, de.name, prefix_len) == 0) {
+      if(match_count < max_matches) {
+        strcpy(matches[match_count], de.name);
+        match_count++;
+      }
+    }
+  }
+  
+  close(fd);
+  return match_count;
 }
 
 int
@@ -271,8 +371,6 @@ backcmd(struct cmd *subcmd)
 //PAGEBREAK!
 // Parsing
 
-char whitespace[] = " \t\r\n\v";
-char symbols[] = "<|>&;()";
 
 int
 gettoken(char **ps, char *es, char **q, char **eq)
