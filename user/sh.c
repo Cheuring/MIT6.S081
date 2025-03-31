@@ -60,7 +60,7 @@ void panic(char*);
 struct cmd *parsecmd(char*);
 int find_matches(char*, char[][DIRSIZ], int);
 
-// Execute cmd.  Never returns.
+// Execute cmd
 void
 runcmd(struct cmd *cmd)
 {
@@ -72,7 +72,7 @@ runcmd(struct cmd *cmd)
   struct redircmd *rcmd;
 
   if(cmd == 0)
-    exit(1);
+    return;
 
   switch(cmd->type){
   default:
@@ -81,26 +81,40 @@ runcmd(struct cmd *cmd)
   case EXEC:
     ecmd = (struct execcmd*)cmd;
     if(ecmd->argv[0] == 0)
+      return;
+    if(strcmp("cd", ecmd->argv[0]) == 0){
+      if(chdir(ecmd->argv[1]) < 0)
+        fprintf(2, "cannot cd %s\n", ecmd->argv[1]);
+      break;
+    }else if(strcmp("wait", ecmd->argv[0]) == 0){
+      wait(0);
+      break;
+    }
+    if(fork1() == 0){
+      exec(ecmd->argv[0], ecmd->argv);
+      fprintf(2, "exec %s failed\n", ecmd->argv[0]);
       exit(1);
-    exec(ecmd->argv[0], ecmd->argv);
-    fprintf(2, "exec %s failed\n", ecmd->argv[0]);
+    }
+    wait(0);
     break;
 
   case REDIR:
     rcmd = (struct redircmd*)cmd;
-    close(rcmd->fd);
-    if(open(rcmd->file, rcmd->mode) < 0){
-      fprintf(2, "open %s failed\n", rcmd->file);
-      exit(1);
+    if(fork1() == 0){
+      close(rcmd->fd);
+      if(open(rcmd->file, rcmd->mode) < 0){
+        fprintf(2, "open %s failed\n", rcmd->file);
+        return;
+      }
+      runcmd(rcmd->cmd);
+      exit(0);
     }
-    runcmd(rcmd->cmd);
+    wait(0);
     break;
 
   case LIST:
     lcmd = (struct listcmd*)cmd;
-    if(fork1() == 0)
-      runcmd(lcmd->left);
-    wait(0);
+    runcmd(lcmd->left);
     runcmd(lcmd->right);
     break;
 
@@ -114,6 +128,7 @@ runcmd(struct cmd *cmd)
       close(p[0]);
       close(p[1]);
       runcmd(pcmd->left);
+      exit(0);
     }
     if(fork1() == 0){
       close(0);
@@ -121,6 +136,7 @@ runcmd(struct cmd *cmd)
       close(p[0]);
       close(p[1]);
       runcmd(pcmd->right);
+      exit(0);
     }
     close(p[0]);
     close(p[1]);
@@ -130,11 +146,13 @@ runcmd(struct cmd *cmd)
 
   case BACK:
     bcmd = (struct backcmd*)cmd;
-    // if(fork1() == 0)
+    if(fork1() == 0){
       runcmd(bcmd->cmd);
+      exit(0);
+    }
     break;
   }
-  exit(0);
+
 }
 
 int
@@ -264,21 +282,8 @@ main(void)
 
   // Read and run input commands.
   while(getcmd(buf, sizeof(buf)) >= 0){
-    if(buf[0] == 'c' && buf[1] == 'd' && buf[2] == ' '){
-      // Chdir must be called by the parent, not the child.
-      buf[strlen(buf)-1] = 0;  // chop \n
-      if(chdir(buf+3) < 0)
-        fprintf(2, "cannot cd %s\n", buf+3);
-      continue;
-    }else if(strcmp("wait\n", buf) == 0){
-      wait(0);
-      continue;
-    }
     struct cmd* cmd = parsecmd(buf);
-    if(fork1() == 0)
-      runcmd(cmd);
-    if(cmd->type != BACK)
-      wait(0);
+    runcmd(cmd);
   }
   exit(0);
 }
