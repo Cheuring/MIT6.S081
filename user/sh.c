@@ -12,6 +12,7 @@
 #define PIPE  3
 #define LIST  4
 #define BACK  5
+#define SUBSH 6
 
 #define MAXARGS 10
 #define MATCH_COUNT 10
@@ -55,6 +56,11 @@ struct backcmd {
   struct cmd *cmd;
 };
 
+struct subshcmd {
+  int type;
+  struct cmd *cmd;
+};
+
 int fork1(void);  // Fork but panics on failure.
 void panic(char*);
 struct cmd *parsecmd(char*);
@@ -70,6 +76,7 @@ runcmd(struct cmd *cmd)
   struct listcmd *lcmd;
   struct pipecmd *pcmd;
   struct redircmd *rcmd;
+  struct subshcmd *scmd;
 
   if(cmd == 0)
     return;
@@ -150,6 +157,15 @@ runcmd(struct cmd *cmd)
       runcmd(bcmd->cmd);
       exit(0);
     }
+    break;
+  
+  case SUBSH:
+    scmd = (struct subshcmd*)cmd;
+    if(fork1() == 0){
+      runcmd(scmd->cmd);
+      exit(0);
+    }
+    wait(0);
     break;
   }
 
@@ -373,6 +389,18 @@ backcmd(struct cmd *subcmd)
   cmd->cmd = subcmd;
   return (struct cmd*)cmd;
 }
+
+struct cmd*
+subshcmd(struct cmd *subcmd)
+{
+  struct subshcmd *cmd;
+
+  cmd = malloc(sizeof(*cmd));
+  memset(cmd, 0, sizeof(*cmd));
+  cmd->type = SUBSH;
+  cmd->cmd = subcmd;
+  return (struct cmd*)cmd;
+}
 //PAGEBREAK!
 // Parsing
 
@@ -520,6 +548,7 @@ parseblock(char **ps, char *es)
     panic("parseblock");
   gettoken(ps, es, 0, 0);
   cmd = parseline(ps, es);
+  cmd = subshcmd(cmd);
   if(!peek(ps, es, ")"))
     panic("syntax - missing )");
   gettoken(ps, es, 0, 0);
@@ -570,6 +599,7 @@ nulterminate(struct cmd *cmd)
   struct listcmd *lcmd;
   struct pipecmd *pcmd;
   struct redircmd *rcmd;
+  struct subshcmd *scmd;
 
   if(cmd == 0)
     return 0;
@@ -602,6 +632,11 @@ nulterminate(struct cmd *cmd)
   case BACK:
     bcmd = (struct backcmd*)cmd;
     nulterminate(bcmd->cmd);
+    break;
+
+  case SUBSH:
+    scmd = (struct subshcmd*)cmd;
+    nulterminate(scmd->cmd);
     break;
   }
   return cmd;
