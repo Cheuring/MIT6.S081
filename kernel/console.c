@@ -24,6 +24,7 @@
 
 #define BACKSPACE 0x100
 #define C(x)  ((x)-'@')  // Control-x
+char intr_symbol[] = {'\n', '\t', C('D'), '\x7f', C('H'), C('P'), C('N'), 0};
 
 //
 // send one character to the uart.
@@ -137,43 +138,71 @@ consoleintr(int c)
 {
   acquire(&cons.lock);
 
-  switch(c){
-  case C('P'):  // Print process list.
-    procdump();
-    break;
-  case C('U'):  // Kill line.
-    while(cons.e != cons.w &&
-          cons.buf[(cons.e-1) % INPUT_BUF] != '\n'){
-      cons.e--;
-      consputc(BACKSPACE);
-    }
-    break;
-  case C('H'): // Backspace
-  case '\x7f':
-    if(cons.e != cons.w){
-      cons.e--;
-      consputc(BACKSPACE);
-      break;
-    }
-  default:
-    if(c != 0 && cons.e-cons.r < INPUT_BUF){
-      c = (c == '\r') ? '\n' : c;
+  // 处理ANSI转义序列（箭头键）
+  static enum {NORMAL, GOT_ESC, GOT_BRACKET} state = NORMAL;
 
-      // echo back to the user.
-      if(c != '\t' && c != '\x7f' && c != C('H'))
-        consputc(c);
-
-      // store for consumption by consoleread().
-      cons.buf[cons.e++ % INPUT_BUF] = c;
-
-      if(c == '\n' || c == '\t' || c == C('D') || c == '\x7f' || c == C('H') || cons.e == cons.r+INPUT_BUF){
-        // wake up consoleread() if a whole line (or end-of-file)
-        // has arrived.
-        cons.w = cons.e;
-        wakeup(&cons.r);
+  if(state == NORMAL) {
+    if(c == '\033') { // ESC
+      state = GOT_ESC;
+    } else {
+      switch(c){
+      case C('P'):  // Print process list.
+        procdump();
+        break;
+      case C('U'):  // Kill line.
+        while(cons.e != cons.w &&
+              cons.buf[(cons.e-1) % INPUT_BUF] != '\n'){
+          cons.e--;
+          consputc(BACKSPACE);
+        }
+        cons.buf[cons.e++ % INPUT_BUF] = c;
+        printf("\r\033[K$ ");
+        break;
+      case C('H'): // Backspace
+      case '\x7f':
+        if(cons.e != cons.w){
+          cons.e--;
+          consputc(BACKSPACE);
+          break;
+        }
+      default:
+        if(c != 0 && cons.e-cons.r < INPUT_BUF){
+          c = (c == '\r') ? '\n' : c;
+    
+          // echo back to the user.
+          if(c != '\t' && c != '\x7f' && c != C('H'))
+            consputc(c);
+    
+          // store for consumption by consoleread().
+          cons.buf[cons.e++ % INPUT_BUF] = c;
+    
+          if(strchr(intr_symbol, c) || cons.e == cons.r+INPUT_BUF){
+            // wake up consoleread() if a whole line (or end-of-file)
+            // has arrived.
+            cons.w = cons.e;
+            wakeup(&cons.r);
+          }
+        }
+        break;
       }
     }
-    break;
+  } else if(state == GOT_ESC) {
+    if(c == '[') {
+      state = GOT_BRACKET;
+    } else {
+      state = NORMAL;
+    }
+  } else if(state == GOT_BRACKET) {
+    state = NORMAL;
+    if(c == 'A') { // uparrow
+      cons.buf[cons.e++ % INPUT_BUF] = C('P');
+      cons.w = cons.e;
+      wakeup(&cons.r);
+    } else if(c == 'B') { // downarrow
+      cons.buf[cons.e++ % INPUT_BUF] = C('N');
+      cons.w = cons.e;
+      wakeup(&cons.r);
+    }
   }
   
   release(&cons.lock);

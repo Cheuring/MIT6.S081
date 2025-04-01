@@ -130,6 +130,7 @@ char*           safestrcpy(char*, const char*, int);
 int             strlen(const char*);
 int             strncmp(const char*, const char*, uint);
 char*           strncpy(char*, const char*, int);
+char*           strchr(const char*, char c);
 
 // syscall.c
 int             argint(int, int*);

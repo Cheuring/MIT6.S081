@@ -16,9 +16,18 @@
 
 #define MAXARGS 10
 #define MATCH_COUNT 10
+#define BUFSIZE 100
+#define HISTORY_COUNT 16
+#define C(x)  ((x)-'@')  // Control-x
 
 char whitespace[] = " \t\r\n\v";
 char symbols[] = "<|>&;()";
+static struct {
+  char history_commands[HISTORY_COUNT][BUFSIZE];
+  int cursor;
+  int w;
+  char stage_command[BUFSIZE];
+} hist;
 
 struct cmd {
   int type;
@@ -65,6 +74,9 @@ int fork1(void);  // Fork but panics on failure.
 void panic(char*);
 struct cmd *parsecmd(char*);
 int find_matches(char*, char[][DIRSIZ], int);
+void stage_command(char*, int);
+void swtch_command(char*, int*, int);
+void add_history(char*);
 
 // Execute cmd
 void
@@ -233,11 +245,31 @@ getcmd(char *buf, int nbuf)
       break;
     }
     
-    if(c == '\x7f' || c == 'H' - '@') {  // Backspace
+    if(c == '\x7f' || c == C('H')) {  // Backspace
       if(i > 0) {
         buf[--i] = '\0';
         printf("\b \b");
       }
+      continue;
+    }
+
+    if(c == C('U')){
+      i = 0;
+      buf[i] = '\0';
+      continue;
+    }
+
+    if(c == C('P')){
+      stage_command(buf, i);
+      swtch_command(buf, &i, -1);
+      printf("\r\033[K$ %s", buf);
+      continue;
+    }
+
+    if(c == C('N')){
+      stage_command(buf, i);
+      swtch_command(buf, &i, 1);
+      printf("\r\033[K$ %s", buf);
       continue;
     }
     
@@ -252,6 +284,8 @@ getcmd(char *buf, int nbuf)
     
   return 0;
 }
+
+// extra feature!
 
 // 查找匹配前缀的文件
 int find_matches(char *prefix, char matches[][DIRSIZ], int max_matches) {
@@ -282,11 +316,51 @@ int find_matches(char *prefix, char matches[][DIRSIZ], int max_matches) {
   return match_count;
 }
 
+void stage_command(char *buf, int n) {
+  if(hist.cursor != hist.w)
+    return;
+  memmove(hist.stage_command, buf, BUFSIZE);
+  hist.stage_command[n] = 0;
+}
+
+void swtch_command(char *buf, int *cursor, int step) {
+  int cur = hist.cursor + step;
+  if(cur < 0 || cur <= hist.w - HISTORY_COUNT) {
+    // fprintf(2, "\nhistory at the top !");
+    return;
+  }
+
+  if(cur == hist.w){
+    memmove(buf, hist.stage_command, BUFSIZE);
+    *cursor = strlen(buf);
+    hist.cursor = cur;
+    return;
+  }
+  if(cur > hist.w){
+    // fprintf(2, "\nhistory reach the bottom");
+    return;
+  }
+
+  memmove(buf, hist.history_commands[cur % HISTORY_COUNT], BUFSIZE);
+  *cursor = strlen(buf);
+  hist.cursor = cur;
+}
+
+void add_history(char *buf) {
+  int idx = hist.w % HISTORY_COUNT;
+  memmove(hist.history_commands[idx], buf, BUFSIZE);
+  // chop '\n'
+  hist.history_commands[idx][strlen(buf) - 1] = '\0';
+  hist.w++;
+  hist.cursor = hist.w;
+}
+
 int
 main(void)
 {
-  static char buf[100];
+  static char buf[BUFSIZE];
   int fd;
+  hist.cursor = hist.w = 0;
 
   // Ensure that three file descriptors are open.
   while((fd = open("console", O_RDWR)) >= 0){
@@ -298,6 +372,7 @@ main(void)
 
   // Read and run input commands.
   while(getcmd(buf, sizeof(buf)) >= 0){
+    add_history(buf);
     struct cmd* cmd = parsecmd(buf);
     runcmd(cmd);
   }
