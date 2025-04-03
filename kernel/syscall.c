@@ -133,30 +133,34 @@ static uint64 (*syscalls[])(void) = {
 [SYS_sysinfo] sys_sysinfo,
 };
 
-static char *syscall_name[] = {
-  [SYS_fork]    "fork",
-  [SYS_exit]    "exit",
-  [SYS_wait]    "wait",
-  [SYS_pipe]    "pipe",
-  [SYS_read]    "read",
-  [SYS_kill]    "kill",
-  [SYS_exec]    "exec",
-  [SYS_fstat]   "fstat",
-  [SYS_chdir]   "chdir",
-  [SYS_dup]     "dup",
-  [SYS_getpid]  "getpid",
-  [SYS_sbrk]    "sbrk",
-  [SYS_sleep]   "sleep",
-  [SYS_uptime]  "uptime",
-  [SYS_open]    "open",
-  [SYS_write]   "write",
-  [SYS_mknod]   "mknod",
-  [SYS_unlink]  "unlink",
-  [SYS_link]    "link",
-  [SYS_mkdir]   "mkdir",
-  [SYS_close]   "close",
-  [SYS_trace]   "trace",
-  [SYS_sysinfo] "sysinfo",
+struct syscall_info {
+  char* name;
+  uint nargs;
+};
+static struct syscall_info sinfos[] = {
+  [SYS_fork]    { "fork",	  0 },
+  [SYS_exit]    { "exit",	  1 },
+  [SYS_wait]    { "wait",	  1 },
+  [SYS_pipe]    { "pipe",	  1 },
+  [SYS_read]    { "read",	  3 },
+  [SYS_kill]    { "kill",	  1 },
+  [SYS_exec]    { "exec",	  2 },
+  [SYS_fstat]   { "fstat",  2 },
+  [SYS_chdir]   { "chdir",  1 },
+  [SYS_dup]     { "dup",    1 },
+  [SYS_getpid]  { "getpid", 0 },
+  [SYS_sbrk]    { "sbrk",	  1 },
+  [SYS_sleep]   { "sleep",	1 },
+  [SYS_uptime]  { "uptime",	0 },
+  [SYS_open]    { "open",	  2 },
+  [SYS_write]   { "write",	3 },
+  [SYS_mknod]   { "mknod",	3 },
+  [SYS_unlink]  { "unlink",	1 },
+  [SYS_link]    { "link",	  2 },
+  [SYS_mkdir]   { "mkdir",	1 },
+  [SYS_close]   { "close",	1 },
+  [SYS_trace]   { "trace",	1 },
+  [SYS_sysinfo] { "sysinfo",1 },
 };
 
 void
@@ -164,13 +168,27 @@ syscall(void)
 {
   int num;
   struct proc *p = myproc();
+  uint64 args[6];
 
   num = p->trapframe->a7;
   if(num > 0 && num < NELEM(syscalls) && syscalls[num]) {
+    for(int i = 0; i < sinfos[num].nargs; ++i) {
+      args[i] = argraw(i);
+    }
     uint64 ret = syscalls[num]();
     p->trapframe->a0 = ret;
-    if(p->trace & (1 << num))
-      printf("%d: syscall %s -> %d\n", p->pid, syscall_name[num], ret);
+
+    if(p->trace & (1 << num)) {
+      printf("%d: syscall %s(", p->pid, sinfos[num].name);
+      
+      for(int i = 0; i < sinfos[num].nargs; ++i) {
+        if(i > 0)
+        printf(", ");
+        printf("%d", args[i]);
+      }
+      
+      printf(") -> %d\n", ret);
+    }
   } else {
     printf("%d %s: unknown sys call %d\n",
             p->pid, p->name, num);
