@@ -5,10 +5,13 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
+#include "sysinfo.h"
 
 struct cpu cpus[NCPU];
 
 struct proc proc[NPROC];
+
+uint64 avgloads[3];
 
 struct proc *initproc;
 
@@ -154,6 +157,22 @@ nproc(void)
   for(p = proc; p < &proc[NPROC]; p++) {
     acquire(&p->lock);
     num += p->state != UNUSED;
+    release(&p->lock);
+  }
+
+  return num;
+}
+
+// count the num of running and runnable procs
+uint64
+count_active_tasks(void)
+{
+  struct proc *p;
+  uint64 num = 0;
+
+  for(p = proc; p < &proc[NPROC]; p++) {
+    acquire(&p->lock);
+    num += (p->state == RUNNABLE) + (p->state == RUNNING);
     release(&p->lock);
   }
 
@@ -675,4 +694,18 @@ procdump(void)
     printf("%d %s %s", p->pid, state, p->name);
     printf("\n");
   }
+}
+
+
+
+void
+calc_load(void)
+{
+  uint64 active_tasks; /* fixed-point */
+  active_tasks = count_active_tasks();
+  // printf("act: %d\n", active_tasks);
+  CALC_LOAD(avgloads[0], EXP_1, active_tasks);
+  CALC_LOAD(avgloads[1], EXP_5, active_tasks);
+  CALC_LOAD(avgloads[2], EXP_15, active_tasks);
+  // printf("k: %d %d %d\n", avgloads[0], avgloads[1], avgloads[2]);
 }

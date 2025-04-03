@@ -119,6 +119,7 @@ sys_sysinfo(void)
  
   sinfo.freemem = kfreemem();
   sinfo.nproc = nproc();
+  memmove(sinfo.avgloads, avgloads, sizeof(avgloads));
 
   if(copyout(p->pagetable, addr, (char*)&sinfo, sizeof(sinfo)) < 0)
     return -1;

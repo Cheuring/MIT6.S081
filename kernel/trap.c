@@ -5,6 +5,7 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
+#include "sysinfo.h"
 
 struct spinlock tickslock;
 uint ticks;
@@ -162,10 +163,16 @@ kerneltrap()
 void
 clockintr()
 {
+  uint64 xticks;
+
   acquire(&tickslock);
-  ticks++;
+  xticks = ticks++;
   wakeup(&ticks);
   release(&tickslock);
+
+  if(xticks % LOAD_FREQ == 0) {
+    calc_load();
+  }
 }
 
 // check if it's an external interrupt or software interrupt,
