@@ -144,6 +144,22 @@ found:
   return p;
 }
 
+// count the num of 'used' proc
+uint64
+nproc(void)
+{
+  struct proc *p;
+  uint64 num = 0;
+
+  for(p = proc; p < &proc[NPROC]; p++) {
+    acquire(&p->lock);
+    num += p->state != UNUSED;
+    release(&p->lock);
+  }
+
+  return num;
+}
+
 // free a proc structure and the data hanging from it,
 // including user pages.
 // p->lock must be held.
@@ -164,6 +180,7 @@ freeproc(struct proc *p)
   p->killed = 0;
   p->xstate = 0;
   p->state = UNUSED;
+  p->trace = 0;
 }
 
 // Create a user page table for a given process,
@@ -244,6 +261,8 @@ userinit(void)
 
   p->state = RUNNABLE;
 
+  p->trace = 0;
+
   release(&p->lock);
 }
 
@@ -288,6 +307,9 @@ fork(void)
     return -1;
   }
   np->sz = p->sz;
+
+  // copy trace flag to child
+  np->trace = p->trace;
 
   // copy saved user registers.
   *(np->trapframe) = *(p->trapframe);
