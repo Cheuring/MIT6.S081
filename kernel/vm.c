@@ -432,3 +432,41 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
     return -1;
   }
 }
+
+void
+vmprint_helper_prefix(int level)
+{
+  for(int i = 2; i > level; i--) {
+    printf(".. ");
+  }
+  printf("..");
+}
+
+void
+vmprint_helper(pagetable_t pagetable, int level, int idx)
+{
+  vmprint_helper_prefix(level);
+  printf("%d: pte %p pa %p\n", idx, pagetable[idx], PTE2PA(pagetable[idx]));
+
+  if(level == 0)
+    return;
+
+  // converting pagetable entry to physical address because virtual addresses 
+  // from KERNBASE to PHYSTOP map directly to the same physical addresses
+  pagetable = (pagetable_t)PTE2PA(pagetable[idx]);
+  for(int i = 0; i < 512; i++) {
+    if(pagetable[i] & PTE_V)
+      vmprint_helper(pagetable, level - 1, i);
+  }
+}
+
+void
+vmprint(pagetable_t pagetable)
+{
+  printf("page table %p\n", pagetable);
+
+  for(int i = 0; i < 512; i++) {
+    if(pagetable[i] & PTE_V)
+      vmprint_helper(pagetable, 2, i);
+  }
+}
