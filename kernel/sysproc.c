@@ -80,7 +80,35 @@ sys_sleep(void)
 int
 sys_pgaccess(void)
 {
-  // lab pgtbl: your code here.
+  uint64 base, va_bitmap;
+  int sz;
+  uint buf = 0;
+  pte_t *pte;
+  struct proc *p;
+  
+  if(argaddr(0, &base) < 0  ||
+      argint(1, &sz) < 0  ||
+      argaddr(2, &va_bitmap) < 0)
+    return -1;
+
+  if(PGROUNDDOWN(base) + ((sz - 1) << PGSHIFT) >= MAXVA)
+    return -1;
+
+  p = myproc();
+
+  for(int i = 0; i < sz; ++i) {
+    if((pte = walk(p->pagetable, base + (i << PGSHIFT), 0)) == 0)
+      return -1;
+
+    if(*pte & PTE_A) {
+      buf |= 1 << i;
+      *pte &= ~PTE_A;
+    }
+  }
+
+  if(copyout(p->pagetable, va_bitmap, (char*)&buf, sizeof(buf)) < 0)
+    return -1;
+    
   return 0;
 }
 #endif
