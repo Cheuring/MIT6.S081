@@ -79,6 +79,20 @@ TOOLPREFIX := $(shell if riscv64-unknown-elf-objdump -i 2>&1 | grep 'elf64-big' 
 	echo "***" 1>&2; exit 1; fi)
 endif
 
+ifeq ($(wildcard kernel/symbols.c),)
+# 如果symbols.c不存在，先创建一个空的
+$(shell echo \
+"#include \"types.h\"\n\
+struct symtable_entry {\n\
+  uint64 addr;\n\
+  char *name;\n\
+};\n\
+struct symtable_entry symbols[] = {{0,0}};\n\
+char* findsym(uint64 addr) {\n\
+	return \"unknown\";\n\
+}" > kernel/symbols.c)
+endif
+
 QEMU = qemu-system-riscv64
 
 CC = $(TOOLPREFIX)gcc
@@ -270,7 +284,7 @@ fs.img: mkfs/mkfs README $(UEXTRA) $(UPROGS)
 clean: 
 	rm -f *.tex *.dvi *.idx *.aux *.log *.ind *.ilg \
 	*/*.o */*.d */*.asm */*.sym \
-	$U/initcode $U/initcode.out $K/kernel fs.img \
+	$U/initcode $U/initcode.out $K/kernel fs.img $K/symbols.c \
 	mkfs/mkfs .gdbinit \
         $U/usys.S \
 	$(UPROGS) \
@@ -409,5 +423,7 @@ myapi.key:
 
 symbols: kernel/kernel
 	sh ./gensyms.sh
+
+kernel_with_symbols: kernel symbols kernel
 
 .PHONY: handin tarball tarball-pref clean grade handin-check symbols
