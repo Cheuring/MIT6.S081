@@ -140,7 +140,10 @@ backtrace(void)
   uint64 fp = r_fp(), top = PGROUNDUP(fp), down = PGROUNDDOWN(fp);
   printf("backtrace:\n");
   while(fp <= top && fp > down){
-    printf("%p\n", *(uint64*)(fp - 8));
+    // printf("%p\n", *(uint64*)(fp - 8));
+    uint64 ra = *(uint64*)(fp - 8);
+    char* name = findsym(ra);
+    printf("%p %s\n", ra, name);
     fp = *(uint64*)(fp - 16);
   }
 }

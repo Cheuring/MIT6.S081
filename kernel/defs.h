@@ -9,6 +9,9 @@ struct sleeplock;
 struct stat;
 struct superblock;
 
+// symbols.c
+char*           findsym(uint64);
+
 // bio.c
 void            binit(void);
 struct buf*     bread(uint, uint);

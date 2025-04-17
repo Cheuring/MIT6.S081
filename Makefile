@@ -30,7 +30,8 @@ OBJS = \
   $K/sysfile.o \
   $K/kernelvec.o \
   $K/plic.o \
-  $K/virtio_disk.o
+  $K/virtio_disk.o \
+  $K/symbols.o \
 
 OBJS_KCSAN = \
   $K/start.o \
@@ -406,5 +407,7 @@ myapi.key:
 		false; \
 	fi;
 
+symbols: kernel/kernel
+	sh ./gensyms.sh
 
-.PHONY: handin tarball tarball-pref clean grade handin-check
+.PHONY: handin tarball tarball-pref clean grade handin-check symbols
