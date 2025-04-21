@@ -67,12 +67,31 @@ usertrap(void)
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
+  } else if(r_scause() == 15 || r_scause() == 13){
+    uint64 va = r_stval();
+    if(va >= MAXVA){
+      p->killed = 1;
+      printf("trap: beyond MAXVA\n");
+      goto out;
+    }
+
+    pte_t* pte = walk(p->pagetable, va, 0);
+    if(pte == 0 || (*pte & PTE_V) == 0  || (*pte & PTE_U) == 0 || (*pte & PTE_C) == 0){
+      p->killed = 1;
+      printf("trap: unprivileged\n");
+      goto out;
+    }
+
+    if(handle_cow(pte) != 0){
+      p->killed = 1;
+    }
   } else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
     p->killed = 1;
   }
 
+out:
   if(p->killed)
     exit(-1);
 
