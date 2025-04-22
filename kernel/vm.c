@@ -15,6 +15,8 @@ extern char etext[];  // kernel.ld sets this to end of kernel code.
 
 extern char trampoline[]; // trampoline.S
 
+void freewalk(pagetable_t pagetable);
+
 // Make a direct-map page table for the kernel.
 pagetable_t
 kvmmake(void)
@@ -44,7 +46,7 @@ kvmmake(void)
   kvmmap(kpgtbl, TRAMPOLINE, (uint64)trampoline, PGSIZE, PTE_R | PTE_X);
 
   // map kernel stacks
-  proc_mapstacks(kpgtbl);
+  // proc_mapstacks(kpgtbl);
   
   return kpgtbl;
 }
@@ -277,6 +279,24 @@ freewalk(pagetable_t pagetable)
     } else if(pte & PTE_V){
       panic("freewalk: leaf");
     }
+  }
+  kfree((void*)pagetable);
+}
+
+// Recursively free page-table pages.
+// But retain leaf physical addresses
+void
+kfreewalk(pagetable_t pagetable)
+{
+  // there are 2^9 = 512 PTEs in a page table.
+  for(int i = 0; i < 512; i++){
+    pte_t pte = pagetable[i];
+    if((pte & PTE_V) && (pte & (PTE_R|PTE_W|PTE_X)) == 0){
+      // this PTE points to a lower-level page table.
+      uint64 child = PTE2PA(pte);
+      kfreewalk((pagetable_t)child);
+    }
+    pagetable[i] = 0;
   }
   kfree((void*)pagetable);
 }

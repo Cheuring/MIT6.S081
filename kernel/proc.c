@@ -19,6 +19,7 @@ extern void forkret(void);
 static void freeproc(struct proc *p);
 
 extern char trampoline[]; // trampoline.S
+extern pagetable_t kernel_pagetable;
 
 // helps ensure that wakeups of wait()ing
 // parents are not lost. helps obey the
@@ -135,6 +136,15 @@ found:
   }
   p->usyscall->pid = p->pid;
 
+  // alloc kernel page table
+  p->kpagetable = kvmmake();
+
+  char *pa = kalloc();
+  if(pa == 0)
+    panic("kalloc");
+  uint64 va = KSTACK((int) (p - proc));
+  kvmmap(p->kpagetable, va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
+
   // An empty user page table.
   p->pagetable = proc_pagetable(p);
   if(p->pagetable == 0){
@@ -166,6 +176,16 @@ freeproc(struct proc *p)
   p->usyscall = 0;
   if(p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
+
+  // free kstack
+  pte_t* pte = walk(p->kpagetable, p->kstack, 0);
+  if(pte == 0)
+    panic("free kstack\n");
+  kfree((void*)PTE2PA(*pte));
+
+  if(p->kpagetable)
+    kfreewalk(p->kpagetable);
+    
   p->pagetable = 0;
   p->sz = 0;
   p->pid = 0;
@@ -474,10 +494,14 @@ scheduler(void)
         // before jumping back to us.
         p->state = RUNNING;
         c->proc = p;
+        w_satp(MAKE_SATP(p->kpagetable));
+        sfence_vma();
         swtch(&c->context, &p->context);
 
         // Process is done running for now.
         // It should have changed its p->state before coming back.
+        w_satp(MAKE_SATP(kernel_pagetable));
+        sfence_vma();
         c->proc = 0;
       }
       release(&p->lock);
