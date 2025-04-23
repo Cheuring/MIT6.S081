@@ -111,6 +111,21 @@ sys_pgaccess(void)
     
   return 0;
 }
+
+int
+sys_pgpte(void)
+{
+  uint64 va;
+  struct proc *p;  
+
+  p = myproc();
+  argaddr(0, &va);
+  pte_t *pte = walk(p->pagetable, va, 0);
+  if(pte != 0) {
+      return (uint64) *pte;
+  }
+  return 0;
+}
 #endif
 
 uint64

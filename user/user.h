@@ -31,6 +31,7 @@ int connect(uint32, uint16, uint16);
 int pgaccess(void *base, int len, void *mask);
 // usyscall region
 int ugetpid(void);
+uint64 pgpte(void*);
 #endif
 
 // ulib.c
