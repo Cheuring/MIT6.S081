@@ -76,13 +76,14 @@ usertrap(void)
     }
 
     pte_t* pte = walk(p->pagetable, va, 0);
-    if(pte == 0 || (*pte & PTE_V) == 0  || (*pte & PTE_U) == 0 || (*pte & PTE_C) == 0){
-      p->killed = 1;
-      printf("trap: unprivileged\n");
+    if(pte != 0 && (*pte & PTE_C)){
+      if(handle_cow(pte) != 0){
+        p->killed = 1;
+      }
       goto out;
     }
 
-    if(handle_cow(pte) != 0){
+    if(handle_lazy(va) < 0){
       p->killed = 1;
     }
   } else {

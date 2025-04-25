@@ -153,8 +153,11 @@ freeproc(struct proc *p)
   if(p->trapframe)
     kfree((void*)p->trapframe);
   p->trapframe = 0;
-  if(p->pagetable)
-    proc_freepagetable(p->pagetable, p->sz);
+
+  // already freed in exit()
+  // if(p->pagetable)
+  //   proc_freepagetable(p->pagetable, p->sz);
+  
   p->pagetable = 0;
   p->sz = 0;
   p->pid = 0;
@@ -257,9 +260,10 @@ growproc(int n)
 
   sz = p->sz;
   if(n > 0){
-    if((sz = uvmalloc(p->pagetable, sz, sz + n)) == 0) {
-      return -1;
-    }
+    // if((sz = uvmalloc(p->pagetable, sz, sz + n)) == 0) {
+    //   return -1;
+    // }
+    sz += n;
   } else if(n < 0){
     sz = uvmdealloc(p->pagetable, sz, sz + n);
   }
@@ -352,6 +356,11 @@ exit(int status)
       p->ofile[fd] = 0;
     }
   }
+
+  // free pagetable 
+  // to avoid some proc alloc to much stucking others to alloc
+  if(p->pagetable)
+    proc_freepagetable(p->pagetable, p->sz);
 
   begin_op();
   iput(p->cwd);
