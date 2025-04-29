@@ -62,6 +62,7 @@ thread_schedule(void)
      * Invoke thread_switch to switch from t to next_thread:
      * thread_switch(??, ??);
      */
+    thread_switch((uint64)t, (uint64)current_thread);
   } else
     next_thread = 0;
 }
@@ -75,7 +76,10 @@ thread_create(void (*func)())
     if (t->state == FREE) break;
   }
   t->state = RUNNABLE;
-  // YOUR CODE HERE
+  // save ra
+  *(uint64*)t->stack = (uint64)func;
+  // save sp
+  *((uint64*)t->stack + 1) = (uint64)(t->stack + STACK_SIZE);
 }
 
 void 
