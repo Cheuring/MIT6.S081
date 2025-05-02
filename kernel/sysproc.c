@@ -46,7 +46,7 @@ sys_sbrk(void)
 
   if(argint(0, &n) < 0)
     return -1;
-  addr = myproc()->sz;
+  addr = myproc()->tshared->sz;
   if(growproc(n) < 0)
     return -1;
   return addr;
@@ -94,4 +94,27 @@ sys_uptime(void)
   xticks = ticks;
   release(&tickslock);
   return xticks;
+}
+
+uint64
+sys_clone(void)
+{
+  uint64 func, arg1, arg2, stack;
+  if(argaddr(0, &func) < 0 ||
+    argaddr(1, &arg1) < 0 ||
+    argaddr(2, &arg2) < 0 ||
+    argaddr(3, &stack) < 0)
+    return -1;
+
+  return clone(func, arg1, arg2, stack);
+}
+
+uint64
+sys_join(void)
+{
+  uint64 stackaddr;
+  if(argaddr(0, &stackaddr) < 0)
+    return -1;
+  
+  return join(stackaddr);
 }

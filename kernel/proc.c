@@ -119,6 +119,7 @@ allocproc(void)
 found:
   p->pid = allocpid();
   p->state = USED;
+  p->trapframe_va = TRAPFRAME;
 
   // Allocate a trapframe page.
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
@@ -127,9 +128,48 @@ found:
     return 0;
   }
 
+  p->tshared = &p->trapframe->tshared;
+  initlock(&p->tshared->lock, "tshared");
+
   // An empty user page table.
   p->pagetable = proc_pagetable(p);
   if(p->pagetable == 0){
+    freeproc(p);
+    release(&p->lock);
+    return 0;
+  }
+
+  // Set up new context to start executing at forkret,
+  // which returns to user space.
+  memset(&p->context, 0, sizeof(p->context));
+  p->context.ra = (uint64)forkret;
+  p->context.sp = p->kstack + PGSIZE;
+
+  return p;
+}
+
+static struct proc*
+allocthread(void)
+{
+  struct proc *p;
+
+  for(p = proc; p < &proc[NPROC]; p++) {
+    acquire(&p->lock);
+    if(p->state == UNUSED) {
+      goto found;
+    } else {
+      release(&p->lock);
+    }
+  }
+  return 0;
+
+found:
+  p->pid = allocpid();
+  p->state = USED;
+  p->isthread = 1;
+
+  // Allocate a trapframe page.
+  if((p->trapframe = (struct trapframe *)kalloc()) == 0){
     freeproc(p);
     release(&p->lock);
     return 0;
@@ -150,13 +190,17 @@ found:
 static void
 freeproc(struct proc *p)
 {
+  // p->tshared->sz in p->trapframe, so free trapframe later
+  if(p->pagetable && !p->isthread)
+    proc_freepagetable(p->pagetable, p->tshared->sz);
   if(p->trapframe)
     kfree((void*)p->trapframe);
   p->trapframe = 0;
-  if(p->pagetable)
-    proc_freepagetable(p->pagetable, p->sz);
   p->pagetable = 0;
-  p->sz = 0;
+  p->tshared = 0;
+  p->tstack = 0;
+  p->isthread = 0;
+  p->trapframe_va = 0;
   p->pid = 0;
   p->parent = 0;
   p->name[0] = 0;
@@ -233,7 +277,7 @@ userinit(void)
   // allocate one user page and copy init's instructions
   // and data into it.
   uvminit(p->pagetable, initcode, sizeof(initcode));
-  p->sz = PGSIZE;
+  p->tshared->sz = PGSIZE;
 
   // prepare for the very first "return" from kernel to user.
   p->trapframe->epc = 0;      // user program counter
@@ -254,16 +298,19 @@ growproc(int n)
 {
   uint sz;
   struct proc *p = myproc();
+  acquire(&p->tshared->lock);
 
-  sz = p->sz;
+  sz = p->tshared->sz;
   if(n > 0){
     if((sz = uvmalloc(p->pagetable, sz, sz + n)) == 0) {
+      release(&p->tshared->lock);
       return -1;
     }
   } else if(n < 0){
     sz = uvmdealloc(p->pagetable, sz, sz + n);
   }
-  p->sz = sz;
+  p->tshared->sz = sz;
+  release(&p->tshared->lock);
   return 0;
 }
 
@@ -282,18 +329,94 @@ fork(void)
   }
 
   // Copy user memory from parent to child.
-  if(uvmcopy(p->pagetable, np->pagetable, p->sz) < 0){
+  if(uvmcopy(p->pagetable, np->pagetable, p->tshared->sz) < 0){
     freeproc(np);
     release(&np->lock);
     return -1;
   }
-  np->sz = p->sz;
+  np->tshared->sz = p->tshared->sz;
 
   // copy saved user registers.
   *(np->trapframe) = *(p->trapframe);
 
   // Cause fork to return 0 in the child.
   np->trapframe->a0 = 0;
+
+  // increment reference counts on open file descriptors.
+  for(i = 0; i < NOFILE; i++)
+    if(p->ofile[i])
+      np->ofile[i] = filedup(p->ofile[i]);
+  np->cwd = idup(p->cwd);
+
+  safestrcpy(np->name, p->name, sizeof(p->name));
+
+  pid = np->pid;
+
+  release(&np->lock);
+
+  acquire(&wait_lock);
+  np->parent = p;
+  release(&wait_lock);
+
+  acquire(&np->lock);
+  np->state = RUNNABLE;
+  release(&np->lock);
+
+  return pid;
+}
+
+int
+clone(uint64 func, uint64 arg1, uint64 arg2, uint64 stack)
+{
+  int i, pid;
+  struct proc *np;
+  struct proc *p = myproc();
+
+  if((stack % PGSIZE) != 0){
+    return -1;
+  }
+
+  if((np = allocthread()) == 0){
+    return -1;
+  }
+
+  // share same pagetable
+  np->pagetable = p->pagetable;
+  np->tshared = p->tshared;
+
+  *(np->trapframe) = *(p->trapframe);
+
+  // set up thread env
+  np->trapframe->epc = func;
+  np->trapframe->a0 = arg1;
+  np->trapframe->a1 = arg2;
+  np->trapframe->sp = stack + 2 * PGSIZE;
+  // ensure thread without exit return to a invalid address to trigger trap
+  np->trapframe->ra = (uint64)-1;
+  // keep stack address for "join" to return
+  np->tstack = stack;
+  // set first page as guard page
+  uvmclear(np->pagetable, np->tstack);
+
+  // find a unused address to remap Trapframe page
+  uint64 trap_va = TRAPFRAME - PGSIZE;
+  for(; trap_va >= PHYSTOP; trap_va -= PGSIZE){
+    if(kwalkaddr(np->pagetable, trap_va) == 0){
+      np->trapframe_va = trap_va;
+      if(mappages(np->pagetable, np->trapframe_va, PGSIZE, (uint64)np->trapframe, PTE_R | PTE_W) < 0){
+        freeproc(np);
+        release(&np->lock);
+        return -1;
+      }
+      break;
+    }
+  }
+
+  if(trap_va < PHYSTOP){
+    freeproc(np);
+    release(&np->lock);
+    return -1;
+  }
 
   // increment reference counts on open file descriptors.
   for(i = 0; i < NOFILE; i++)
@@ -326,11 +449,60 @@ reparent(struct proc *p)
   struct proc *pp;
 
   for(pp = proc; pp < &proc[NPROC]; pp++){
-    if(pp->parent == p){
+    if(pp->parent == p && !pp->isthread){
       pp->parent = initproc;
       wakeup(initproc);
     }
   }
+}
+
+// when a process exit, all threads of this process should exit
+void
+wait_threads(struct proc *p)
+{
+  struct proc *np;
+  int have_running;
+
+  acquire(&wait_lock);
+
+  // kill and wakeup all threads
+  for(np = proc; np < &proc[NPROC]; ++np){
+    if(np->parent == p && np->isthread){
+      acquire(&np->lock);
+      np->killed = 1;
+      if(np->state == SLEEPING)
+        np->state = RUNNABLE;
+      release(&np->lock);
+    }
+  }
+
+  for(;;){
+    have_running = 0;
+    for(np = proc; np < &proc[NPROC]; np++){
+      if(np->parent == p && np->isthread){
+        // make sure the child isn't still in exit() or swtch().
+        acquire(&np->lock);
+
+        if(np->state != ZOMBIE){
+          have_running = 1;
+          release(&np->lock);
+          break;
+        }else{
+          freeproc(np);
+          release(&np->lock);
+        }
+      }
+    }
+
+    // No point waiting if we don't have any running thread.
+    if(!have_running){
+      break;
+    }
+    
+    // Wait for a child to exit.
+    sleep(p, &wait_lock);  //DOC: wait-sleep
+  }
+  release(&wait_lock);
 }
 
 // Exit the current process.  Does not return.
@@ -357,6 +529,11 @@ exit(int status)
   iput(p->cwd);
   end_op();
   p->cwd = 0;
+
+  wait_threads(p);
+  if(p->isthread){
+    uvmunmap(p->pagetable, p->trapframe_va, 1, 0);
+  }
 
   acquire(&wait_lock);
 
@@ -393,7 +570,7 @@ wait(uint64 addr)
     // Scan through table looking for exited children.
     havekids = 0;
     for(np = proc; np < &proc[NPROC]; np++){
-      if(np->parent == p){
+      if(np->parent == p && !np->isthread){
         // make sure the child isn't still in exit() or swtch().
         acquire(&np->lock);
 
@@ -407,6 +584,56 @@ wait(uint64 addr)
             release(&wait_lock);
             return -1;
           }
+          freeproc(np);
+          release(&np->lock);
+          release(&wait_lock);
+          return pid;
+        }
+        release(&np->lock);
+      }
+    }
+
+    // No point waiting if we don't have any children.
+    if(!havekids || p->killed){
+      release(&wait_lock);
+      return -1;
+    }
+    
+    // Wait for a child to exit.
+    sleep(p, &wait_lock);  //DOC: wait-sleep
+  }
+}
+// join for a child thread to exit and return its pid.
+// Return -1 if this thread has no children.
+int
+join(uint64 addr)
+{
+  struct proc *np;
+  int havekids, pid;
+  struct proc *p = myproc();
+
+  acquire(&wait_lock);
+
+  for(;;){
+    // Scan through table looking for exited children.
+    havekids = 0;
+    for(np = proc; np < &proc[NPROC]; np++){
+      if(np->parent == p && np->isthread){
+        // make sure the child isn't still in exit() or swtch().
+        acquire(&np->lock);
+
+        havekids = 1;
+        if(np->state == ZOMBIE){
+          // Found one.
+          pid = np->pid;
+          if((addr != 0 && copyout(p->pagetable, addr, (char *)&np->tstack,
+                                  sizeof(np->tstack)) < 0)) {
+            release(&np->lock);
+            release(&wait_lock);
+            return -1;
+          }
+          // reset guard page with PTE_U
+          uvmset(np->pagetable, np->tstack);
           freeproc(np);
           release(&np->lock);
           release(&wait_lock);

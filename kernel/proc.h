@@ -26,6 +26,12 @@ struct cpu {
   int intena;                 // Were interrupts enabled before push_off()?
 };
 
+// thread shared value
+struct tshared {
+  struct spinlock lock;
+  uint64 sz;            // Size of process memory (bytes)
+};
+
 extern struct cpu cpus[NCPU];
 
 // per-process data for the trap handling code in trampoline.S.
@@ -78,6 +84,7 @@ struct trapframe {
   /* 264 */ uint64 t4;
   /* 272 */ uint64 t5;
   /* 280 */ uint64 t6;
+            struct tshared tshared; // proc->tshared points here
 };
 
 enum procstate { UNUSED, USED, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
@@ -98,11 +105,14 @@ struct proc {
 
   // these are private to the process, so p->lock need not be held.
   uint64 kstack;               // Virtual address of kernel stack
-  uint64 sz;                   // Size of process memory (bytes)
   pagetable_t pagetable;       // User page table
   struct trapframe *trapframe; // data page for trampoline.S
   struct context context;      // swtch() here to run process
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
+  uint64 trapframe_va;          // Trapframe value for each thread
+  struct tshared* tshared;     // shared value between threads
+  int isthread;                // weather is a thread
+  uint64 tstack;               // thread stack value
 };

@@ -23,6 +23,8 @@ int getpid(void);
 char* sbrk(int);
 int sleep(int);
 int uptime(void);
+int clone(void(*fcn)(void*, void*), void* arg1, void* arg2, void* stack);
+int join(void** stack);
 
 // ulib.c
 int stat(const char*, struct stat*);
@@ -40,3 +42,5 @@ void free(void*);
 int atoi(const char*);
 int memcmp(const void *, const void *, uint);
 void *memcpy(void *, const void *, uint);
+int thread_create(void (*start_routine)(void *, void *), void *arg1, void *arg2);
+int thread_join();

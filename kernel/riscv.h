@@ -1,3 +1,20 @@
+static inline uint64 
+xchg(volatile uint64 *addr, uint64 newval) {
+  uint64 result;
+  uint64 temp;
+
+  asm volatile (
+      "1:     lr.d    %0, %2         \n" // Load Reserved from addr
+      "       mv      %1, %3         \n" // Move newval to temp
+      "       sc.d    %1, %1, %2     \n" // Store Conditional temp to addr
+      "       bnez    %1, 1b         \n" // If sc.d failed, retry
+      : "=&r" (result), "=&r" (temp), "+A" (*addr)
+      : "r" (newval)
+      : "memory");
+
+  return result;
+}
+
 // which hart (core) is this?
 static inline uint64
 r_mhartid()
