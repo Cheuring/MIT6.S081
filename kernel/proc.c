@@ -431,7 +431,12 @@ clone(uint64 func, uint64 arg1, uint64 arg2, uint64 stack)
   release(&np->lock);
 
   acquire(&wait_lock);
-  np->parent = p;
+  // thread can not have son
+  if(p->isthread){
+    np->parent = p->parent;
+  }else{
+    np->parent = p;
+  }
   release(&wait_lock);
 
   acquire(&np->lock);
@@ -530,9 +535,10 @@ exit(int status)
   end_op();
   p->cwd = 0;
 
-  wait_threads(p);
   if(p->isthread){
     uvmunmap(p->pagetable, p->trapframe_va, 1, 0);
+  }else{
+    wait_threads(p);
   }
 
   acquire(&wait_lock);
