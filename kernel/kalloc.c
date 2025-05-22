@@ -26,10 +26,8 @@ struct {
 void
 kinit()
 {
-  char lockname[10];
   for(int i=0; i<NPROC; ++i){
-    snprintf(lockname, 10, "kmem_%d", i);
-    initlock(&kmem[i].lock, lockname);
+    initlock(&kmem[i].lock, "kmem");
   }
   freerange(end, (void*)PHYSTOP);
 }
