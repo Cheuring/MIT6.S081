@@ -32,6 +32,11 @@ main()
     printf("bigfile: file is too small\n");
     exit(-1);
   }
+
+  if(blocks != NINDIRECT * NINDIRECT * NINDIRECT + NINDIRECT * NINDIRECT + NINDIRECT + NDIRECT){
+    printf("triple inode: file is too small\n");
+    exit(-1);
+  }
   
   close(fd);
   fd = open("big.file", O_RDONLY);
