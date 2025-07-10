@@ -528,3 +528,16 @@ sys_symlink(void)
 
   return 0;
 }
+
+uint64
+sys_lseek(void)
+{
+  struct file *f;
+  long offset;
+  int whence;
+
+  if(argfd(0, 0, &f) < 0 || argaddr(1, (uint64*)&offset) < 0 || argint(2, &whence) < 0)
+    return -1;
+
+  return filelseek(f, offset, whence);
+}

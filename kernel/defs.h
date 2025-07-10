@@ -33,6 +33,7 @@ void            fileinit(void);
 int             fileread(struct file*, uint64, int n);
 int             filestat(struct file*, uint64 addr);
 int             filewrite(struct file*, uint64, int n);
+int             filelseek(struct file*, long offset, int whence);
 
 // fs.c
 void            fsinit(int);
@@ -49,9 +50,9 @@ void            iupdate(struct inode*);
 int             namecmp(const char*, const char*);
 struct inode*   namei(char*);
 struct inode*   nameiparent(char*, char*);
-int             readi(struct inode*, int, uint64, uint, uint);
+int             readi(struct inode*, int, uint64, uint64, uint64);
 void            stati(struct inode*, struct stat*);
-int             writei(struct inode*, int, uint64, uint, uint);
+int             writei(struct inode*, int, uint64, uint64, uint64);
 void            itrunc(struct inode*);
 
 // ramdisk.c

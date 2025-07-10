@@ -566,9 +566,9 @@ stati(struct inode *ip, struct stat *st)
 // If user_dst==1, then dst is a user virtual address;
 // otherwise, dst is a kernel address.
 int
-readi(struct inode *ip, int user_dst, uint64 dst, uint off, uint n)
+readi(struct inode *ip, int user_dst, uint64 dst, uint64 off, uint64 n)
 {
-  uint tot, m;
+  uint64 tot, m;
   struct buf *bp;
 
   if(off > ip->size || off + n < off)
@@ -597,9 +597,9 @@ readi(struct inode *ip, int user_dst, uint64 dst, uint off, uint n)
 // If the return value is less than the requested n,
 // there was an error of some kind.
 int
-writei(struct inode *ip, int user_src, uint64 src, uint off, uint n)
+writei(struct inode *ip, int user_src, uint64 src, uint64 off, uint64 n)
 {
-  uint tot, m;
+  uint64 tot, m;
   struct buf *bp;
 
   if(off > ip->size || off + n < off)
