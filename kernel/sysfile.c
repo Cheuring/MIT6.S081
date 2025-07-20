@@ -507,20 +507,17 @@ sys_mmap(void)
     return -1;
 
   filedup(f);
-  if((addr = vmmark(p->pagetable, p->sz, length)) == -1){
-    fileclose(f);
-    return -1;
-  }
+  addr = PGROUNDUP(p->sz);
 
   p->sz = addr + length;
   vma->f = f;
   vma->start = addr;
+  vma->filestart = addr;
   vma->end = addr + length;
   vma->flags = flags;
   vma->prot = prot;
   vma->valid = 1;
   
-  // printf("prot: %d flags: %d\n", prot, flags);
   return addr;
 }
 
@@ -538,7 +535,6 @@ sys_munmap(void)
   if((vma = get_VMA_by_addr(p, addr)) == 0)
     return -1;
 
-  // printf("unmap reached\n");
   if(addr > vma->start && addr + length < vma->end)
     panic("munmap: unmap middle unimplemented\n");
 

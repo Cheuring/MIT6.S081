@@ -81,7 +81,7 @@ struct trapframe {
 };
 
 struct VMA {
-  uint64 start, end;
+  uint64 start, end, filestart;
   struct file *f;
   int prot, flags;
   int valid;

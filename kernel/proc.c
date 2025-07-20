@@ -309,6 +309,11 @@ fork(void)
       np->ofile[i] = filedup(p->ofile[i]);
   np->cwd = idup(p->cwd);
 
+  for(i = 0; i < NVMA; ++i)
+    if(p->VMAs[i].valid)
+      filedup(p->VMAs[i].f);
+  memmove(np->VMAs, p->VMAs, sizeof(p->VMAs));
+
   safestrcpy(np->name, p->name, sizeof(p->name));
 
   pid = np->pid;
@@ -365,7 +370,9 @@ exit(int status)
   // Unmap all mapped vma
   for(vma = p->VMAs; vma < &p->VMAs[NVMA]; ++vma){
     if(vma->valid){
-      vmaunmap(vma, vma->start, vma->end - vma->start, vma->flags & MAP_SHARED);
+      if(vmaunmap(vma, vma->start, vma->end - vma->start, vma->flags & MAP_SHARED) < 0){
+        panic("vmaunmap\n");
+      }
     }
   }
 

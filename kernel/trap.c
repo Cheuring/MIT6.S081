@@ -46,11 +46,12 @@ usertrap(void)
   w_stvec((uint64)kernelvec);
 
   struct proc *p = myproc();
+  uint64 scause = r_scause();
   
   // save user program counter.
   p->trapframe->epc = r_sepc();
   
-  if(r_scause() == 8){
+  if(scause == 8){
     // system call
 
     if(p->killed)
@@ -67,10 +68,18 @@ usertrap(void)
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
-  } else if(r_scause() == 13 || r_scause() == 15){
+  } else if(scause == 13 || scause == 15){ // 13: load 15: store
     uint64 addr = r_stval(), pa;
+    pte_t *pte;
+
     if(addr >= p->sz){
-      printf("usertrap(): scause %p and addr %p", r_scause(), addr);
+      printf("usertrap(): scause %p and addr %p\n", scause, addr);
+      p->killed = 1;
+      goto out;
+    }
+
+    if((pte = walk(p->pagetable, addr, 0)) != 0 && *pte != 0){
+      printf("usertrap(): perm error\n");
       p->killed = 1;
       goto out;
     }
@@ -82,9 +91,8 @@ usertrap(void)
       goto out;
     }
 
-    pte_t *pte;
-    if((pte = walk(p->pagetable, addr, 0)) == 0){
-      printf("usertrap(): pte not mapped\n");
+    if((pte = walk(p->pagetable, addr, 1)) == 0){
+      printf("usertrap(): pte not alloced\n");
       p->killed = 1;
       goto out;
     }
@@ -102,10 +110,9 @@ usertrap(void)
       goto out;
     }
 
-    // printf("trap: addr: %p\n", addr);
     *pte = PA2PTE(pa) | PTE_V | PTE_U | ((vma->prot & 0x3) << 1);
   }else{
-    printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
+    printf("usertrap(): unexpected scause %p pid=%d\n", scause, p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
     p->killed = 1;
   }

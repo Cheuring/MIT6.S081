@@ -155,7 +155,6 @@ vmawrite_helper(struct file *f, int user_src, uint64 addr, uint64 off, uint64 n)
 {
   int r;
 
-  // printf("helper: %d %p %p %p\n", user_src, addr, off, n);
   begin_op();
   ilock(f->ip);
 
@@ -172,37 +171,33 @@ vmaunmap(struct VMA *vma, uint64 addr, uint64 length, int writeback)
   if(addr < vma->start || addr + length > vma->end)
     panic("vmaunmap: beyond range\n");
 
-  // printf("vmaunmap: %p %p %d\nvma: %p %p\n", addr, length, writeback, vma->start, vma->end);
   uint64 start = PGROUNDUP(addr), end = PGROUNDDOWN(addr + length);
   uint64 pa;
   struct proc *p;
 
   p = myproc();
-  if(writeback && vmawrite_helper(vma->f, 1, start, 0, end - start) < 0){
+  if(writeback && vmawrite_helper(vma->f, 1, start, start - vma->filestart, end - start) < 0){
     return -1;
   }
-  // printf("vmaunmap: point0\n");
   uvmunmap(p->pagetable, start, (end - start) / PGSIZE, 1);
 
-  // printf("vmaunmap: point1\n");
   if(start > addr){
     if((pa = walkaddr(p->pagetable, addr)) == 0){
       return -1;
     }
 
-    if(writeback && vmawrite_helper(vma->f, 0, pa, addr & ((1 << PGSHIFT) - 1), start - addr) < 0){
+    if(writeback && vmawrite_helper(vma->f, 0, pa, addr - vma->filestart, start - addr) < 0){
       return -1;
     }
     memset((void *)pa + (addr & ((1 << PGSHIFT) - 1)), 0, start - addr);
   }
 
-  // printf("vmaunmap: point2\n");
   if(end < addr + length){
     if((pa = walkaddr(p->pagetable, end)) == 0){
       return -1;
     }
 
-    if(writeback && vmawrite_helper(vma->f, 0, pa, 0, addr - end + length) < 0){
+    if(writeback && vmawrite_helper(vma->f, 0, pa, end - vma->filestart, addr - end + length) < 0){
       return -1;
     }
     memset((void *)pa, 0, addr - end + length);
@@ -211,7 +206,6 @@ vmaunmap(struct VMA *vma, uint64 addr, uint64 length, int writeback)
     }
   }
 
-  // printf("vmaunmap: point3\n");
   if(addr + length == vma->end){
     vma->end -= length;
   }

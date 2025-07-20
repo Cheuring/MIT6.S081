@@ -288,6 +288,22 @@ fork_test(void)
     exit(1);
   }
 
+  if((pid = fork()) < 0)
+    err("fork");
+  if (pid == 0) {
+    *(p2+PGSIZE) = 'B'; // cannot write to readonly page, should get killed
+    exit(0);
+  }
+
+  status = 0;
+  wait(&status);
+
+  // child not killed
+  if(status == 0){
+    printf("fork_test failed\n");
+    exit(1);
+  }
+
   // check that the parent's mappings are still there.
   _v1(p1);
   _v1(p2);
