@@ -484,3 +484,63 @@ sys_pipe(void)
   }
   return 0;
 }
+
+uint64
+sys_mmap(void)
+{
+  uint64 addr, length, offset;
+  struct file *f;
+  int prot, flags;
+  struct proc *p;
+  struct VMA* vma;
+
+  if(argaddr(0, &addr) < 0 || argaddr(1, &length) < 0 || argint(2, &prot) < 0 ||
+    argint(3, &flags) < 0 || argfd(4, 0, &f) < 0 || argaddr(5, &offset) < 0)
+    return -1;
+
+  if(((flags & MAP_SHARED) && (prot & PROT_WRITE) && !f->writable) ||
+      ((prot & PROT_READ) && !f->readable))
+    return -1;
+
+  p = myproc();
+  if((vma = get_free_VMA(p)) == 0)
+    return -1;
+
+  filedup(f);
+  if((addr = vmmark(p->pagetable, p->sz, length)) == -1){
+    fileclose(f);
+    return -1;
+  }
+
+  p->sz = addr + length;
+  vma->f = f;
+  vma->start = addr;
+  vma->end = addr + length;
+  vma->flags = flags;
+  vma->prot = prot;
+  vma->valid = 1;
+  
+  // printf("prot: %d flags: %d\n", prot, flags);
+  return addr;
+}
+
+uint64
+sys_munmap(void)
+{
+  uint64 addr, length;
+  struct proc *p;
+  struct VMA *vma;
+
+  if(argaddr(0, &addr) < 0 || argaddr(1, &length) < 0)
+    return -1;
+
+  p = myproc();
+  if((vma = get_VMA_by_addr(p, addr)) == 0)
+    return -1;
+
+  // printf("unmap reached\n");
+  if(addr > vma->start && addr + length < vma->end)
+    panic("munmap: unmap middle unimplemented\n");
+
+  return vmaunmap(vma, addr, length, vma->flags & MAP_SHARED);
+}

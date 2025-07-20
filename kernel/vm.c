@@ -180,7 +180,8 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
       panic("uvmunmap: not a leaf");
     if(do_free){
       uint64 pa = PTE2PA(*pte);
-      kfree((void*)pa);
+      if(pa != 0)
+        kfree((void*)pa);
     }
     *pte = 0;
   }
@@ -431,4 +432,21 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
   } else {
     return -1;
   }
+}
+
+uint64
+vmmark(pagetable_t pagetable, uint64 oldsz, uint64 length)
+{
+  uint64 a;
+  pte_t *pte;
+
+  oldsz = PGROUNDUP(oldsz);
+  for(a = 0; a < length; a += PGSIZE){
+    if((pte = walk(pagetable, oldsz + a, 1)) == 0)
+      return -1;
+
+    *pte = PTE_V | PTE_U;
+  }
+
+  return oldsz;
 }

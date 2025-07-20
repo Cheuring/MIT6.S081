@@ -12,6 +12,7 @@
 #include "file.h"
 #include "stat.h"
 #include "proc.h"
+#include "fcntl.h"
 
 struct devsw devsw[NDEV];
 struct {
@@ -127,6 +128,103 @@ fileread(struct file *f, uint64 addr, int n)
   }
 
   return r;
+}
+
+int
+vmaread(struct VMA *vma, uint64 va, uint64 pa)
+{
+  va = PGROUNDDOWN(va);
+  if(vma->f->type != FD_INODE){
+    printf("vmaread: file type error\n");
+    return -1;
+  }
+
+  ilock(vma->f->ip);
+  if(readi(vma->f->ip, 0, pa, va - vma->start, PGSIZE) < 0){
+    printf("vmaread: readi failed\n");
+    iunlock(vma->f->ip);
+    return -1;
+  }
+  iunlock(vma->f->ip);
+
+  return 0;
+}
+
+int
+vmawrite_helper(struct file *f, int user_src, uint64 addr, uint64 off, uint64 n)
+{
+  int r;
+
+  // printf("helper: %d %p %p %p\n", user_src, addr, off, n);
+  begin_op();
+  ilock(f->ip);
+
+  r = writei(f->ip, user_src, addr, off, n);
+
+  iunlock(f->ip);
+  end_op();
+  return r;
+}
+
+int
+vmaunmap(struct VMA *vma, uint64 addr, uint64 length, int writeback)
+{
+  if(addr < vma->start || addr + length > vma->end)
+    panic("vmaunmap: beyond range\n");
+
+  // printf("vmaunmap: %p %p %d\nvma: %p %p\n", addr, length, writeback, vma->start, vma->end);
+  uint64 start = PGROUNDUP(addr), end = PGROUNDDOWN(addr + length);
+  uint64 pa;
+  struct proc *p;
+
+  p = myproc();
+  if(writeback && vmawrite_helper(vma->f, 1, start, 0, end - start) < 0){
+    return -1;
+  }
+  // printf("vmaunmap: point0\n");
+  uvmunmap(p->pagetable, start, (end - start) / PGSIZE, 1);
+
+  // printf("vmaunmap: point1\n");
+  if(start > addr){
+    if((pa = walkaddr(p->pagetable, addr)) == 0){
+      return -1;
+    }
+
+    if(writeback && vmawrite_helper(vma->f, 0, pa, addr & ((1 << PGSHIFT) - 1), start - addr) < 0){
+      return -1;
+    }
+    memset((void *)pa + (addr & ((1 << PGSHIFT) - 1)), 0, start - addr);
+  }
+
+  // printf("vmaunmap: point2\n");
+  if(end < addr + length){
+    if((pa = walkaddr(p->pagetable, end)) == 0){
+      return -1;
+    }
+
+    if(writeback && vmawrite_helper(vma->f, 0, pa, 0, addr - end + length) < 0){
+      return -1;
+    }
+    memset((void *)pa, 0, addr - end + length);
+    if(addr + length == vma->end){
+      uvmunmap(p->pagetable, end, 1, 1);
+    }
+  }
+
+  // printf("vmaunmap: point3\n");
+  if(addr + length == vma->end){
+    vma->end -= length;
+  }
+  if(addr == vma->start){
+    vma->start += length;
+  }
+
+  if(vma->start >= vma->end){
+    fileclose(vma->f);
+    vma->valid = 0;
+  }
+
+  return 0;
 }
 
 // Write to file f.

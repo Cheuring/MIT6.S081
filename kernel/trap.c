@@ -67,12 +67,50 @@ usertrap(void)
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
-  } else {
+  } else if(r_scause() == 13 || r_scause() == 15){
+    uint64 addr = r_stval(), pa;
+    if(addr >= p->sz){
+      printf("usertrap(): scause %p and addr %p", r_scause(), addr);
+      p->killed = 1;
+      goto out;
+    }
+
+    struct VMA *vma = get_VMA_by_addr(p, addr);
+    if(!vma){
+      printf("usertrap(): no available vma\n");
+      p->killed = 1;
+      goto out;
+    }
+
+    pte_t *pte;
+    if((pte = walk(p->pagetable, addr, 0)) == 0){
+      printf("usertrap(): pte not mapped\n");
+      p->killed = 1;
+      goto out;
+    }
+    
+    if((pa = (uint64)kalloc()) == 0){
+      printf("usertrap(): kalloc failed\n");
+      p->killed = 1;
+      goto out;
+    }
+
+    memset((void *)pa, 0, PGSIZE);
+    if(vmaread(vma, addr, pa) < 0){
+      printf("usertrap(): vmaread failed\n");
+      p->killed = 1;
+      goto out;
+    }
+
+    // printf("trap: addr: %p\n", addr);
+    *pte = PA2PTE(pa) | PTE_V | PTE_U | ((vma->prot & 0x3) << 1);
+  }else{
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
     p->killed = 1;
   }
 
+out:
   if(p->killed)
     exit(-1);
 

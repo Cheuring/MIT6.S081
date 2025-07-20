@@ -5,6 +5,7 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
+#include "fcntl.h"
 
 struct cpu cpus[NCPU];
 
@@ -105,6 +106,7 @@ static struct proc*
 allocproc(void)
 {
   struct proc *p;
+  struct VMA *vma;
 
   for(p = proc; p < &proc[NPROC]; p++) {
     acquire(&p->lock);
@@ -140,6 +142,12 @@ found:
   memset(&p->context, 0, sizeof(p->context));
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
+
+  for(vma = p->VMAs; vma < &p->VMAs[NVMA]; ++vma){
+    vma->valid = 0;
+    vma->prot = 0;
+    vma->flags = 0;
+  }
 
   return p;
 }
@@ -340,6 +348,7 @@ void
 exit(int status)
 {
   struct proc *p = myproc();
+  struct VMA *vma;
 
   if(p == initproc)
     panic("init exiting");
@@ -350,6 +359,13 @@ exit(int status)
       struct file *f = p->ofile[fd];
       fileclose(f);
       p->ofile[fd] = 0;
+    }
+  }
+
+  // Unmap all mapped vma
+  for(vma = p->VMAs; vma < &p->VMAs[NVMA]; ++vma){
+    if(vma->valid){
+      vmaunmap(vma, vma->start, vma->end - vma->start, vma->flags & MAP_SHARED);
     }
   }
 
@@ -653,4 +669,31 @@ procdump(void)
     printf("%d %s %s", p->pid, state, p->name);
     printf("\n");
   }
+}
+
+struct VMA*
+get_free_VMA(struct proc* p)
+{
+  struct VMA *i;
+  for(i = p->VMAs; i < &p->VMAs[NVMA]; ++i){
+    if(!i->valid)
+      return i;
+  }
+
+  return 0;
+}
+
+struct VMA*
+get_VMA_by_addr(struct proc* p, uint64 addr)
+{
+  struct VMA *i;
+  for(i = p->VMAs; i < &p->VMAs[NVMA]; ++i){
+    if(!i->valid) continue;
+
+    if(addr >= i->start && addr < i->end){
+      return i;
+    }
+  }
+
+  return 0;
 }
