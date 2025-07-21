@@ -97,14 +97,7 @@ usertrap(void)
       goto out;
     }
     
-    if((pa = (uint64)kalloc()) == 0){
-      printf("usertrap(): kalloc failed\n");
-      p->killed = 1;
-      goto out;
-    }
-
-    memset((void *)pa, 0, PGSIZE);
-    if(vmaread(vma, addr, pa) < 0){
+    if((pa = vmaread(vma, addr)) < 0){
       printf("usertrap(): vmaread failed\n");
       p->killed = 1;
       goto out;

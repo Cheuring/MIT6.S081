@@ -476,6 +476,26 @@ readi(struct inode *ip, int user_dst, uint64 dst, uint off, uint n)
   return tot;
 }
 
+// get inode data address and pin buf
+uint64
+getiva(struct inode *ip, uint off)
+{
+  struct buf *bp;
+
+  if(off > ip->size)
+    return 0;
+
+  if(off % BSIZE != 0){
+    panic("geti: off not aligned\n");
+  }
+
+  bp = bread(ip->dev, bmap(ip, off / BSIZE));
+  bpin(bp);
+  brelse(bp);
+
+  return (uint64)bp->data;
+}
+
 // Write data to inode.
 // Caller must hold ip->lock.
 // If user_src==1, then src is a user virtual address;
@@ -501,6 +521,36 @@ writei(struct inode *ip, int user_src, uint64 src, uint off, uint n)
       brelse(bp);
       break;
     }
+    log_write(bp);
+    brelse(bp);
+  }
+
+  if(off > ip->size)
+    ip->size = off;
+
+  // write the i-node back to disk even if the size didn't change
+  // because the loop above might have called bmap() and added a new
+  // block to ip->addrs[].
+  iupdate(ip);
+
+  return tot;
+}
+
+int
+writei_vma(struct inode *ip, uint off, uint n)
+{
+  uint tot, m;
+  struct buf *bp;
+
+  if(off > ip->size || off + n < off)
+    return -1;
+  if(off + n > MAXFILE*BSIZE)
+    return -1;
+
+  for(tot=0; tot<n; tot+=m, off+=m){
+    bp = bread(ip->dev, bmap(ip, off/BSIZE));
+    m = min(n - tot, BSIZE - off%BSIZE);
+    bunpin(bp);
     log_write(bp);
     brelse(bp);
   }

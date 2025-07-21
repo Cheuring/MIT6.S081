@@ -59,19 +59,17 @@ _v1(char *p)
 void
 makefile(const char *f)
 {
-  int i;
-  int n = PGSIZE/BSIZE;
-
   unlink(f);
   int fd = open(f, O_WRONLY | O_CREATE);
   if (fd == -1)
     err("open");
   memset(buf, 'A', BSIZE);
   // write 1.5 page
-  for (i = 0; i < n + n/2; i++) {
-    if (write(fd, buf, BSIZE) != BSIZE)
-      err("write 0 makefile");
-  }
+  if (write(fd, buf, BSIZE) != BSIZE)
+    err("write 0 makefile");
+  if (write(fd, buf, BSIZE / 2) != BSIZE / 2)
+    err("write 1 makefile");
+
   if (close(fd) == -1)
     err("close");
 }

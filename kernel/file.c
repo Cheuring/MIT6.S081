@@ -12,7 +12,6 @@
 #include "file.h"
 #include "stat.h"
 #include "proc.h"
-#include "fcntl.h"
 
 struct devsw devsw[NDEV];
 struct {
@@ -131,95 +130,20 @@ fileread(struct file *f, uint64 addr, int n)
 }
 
 int
-vmaread(struct VMA *vma, uint64 va, uint64 pa)
+vma_writeback(struct file *f, uint64 off, uint64 n)
 {
-  va = PGROUNDDOWN(va);
-  if(vma->f->type != FD_INODE){
-    printf("vmaread: file type error\n");
-    return -1;
-  }
-
-  ilock(vma->f->ip);
-  if(readi(vma->f->ip, 0, pa, va - vma->start, PGSIZE) < 0){
-    printf("vmaread: readi failed\n");
-    iunlock(vma->f->ip);
-    return -1;
-  }
-  iunlock(vma->f->ip);
-
-  return 0;
-}
-
-int
-vmawrite_helper(struct file *f, int user_src, uint64 addr, uint64 off, uint64 n)
-{
-  int r;
+  int r = 0;
 
   begin_op();
   ilock(f->ip);
 
-  r = writei(f->ip, user_src, addr, off, n);
+  r = writei_vma(f->ip, off, n);
 
   iunlock(f->ip);
   end_op();
   return r;
 }
 
-int
-vmaunmap(struct VMA *vma, uint64 addr, uint64 length, int writeback)
-{
-  if(addr < vma->start || addr + length > vma->end)
-    panic("vmaunmap: beyond range\n");
-
-  uint64 start = PGROUNDUP(addr), end = PGROUNDDOWN(addr + length);
-  uint64 pa;
-  struct proc *p;
-
-  p = myproc();
-  if(writeback && vmawrite_helper(vma->f, 1, start, start - vma->filestart, end - start) < 0){
-    return -1;
-  }
-  uvmunmap(p->pagetable, start, (end - start) / PGSIZE, 1);
-
-  if(start > addr){
-    if((pa = walkaddr(p->pagetable, addr)) == 0){
-      return -1;
-    }
-
-    if(writeback && vmawrite_helper(vma->f, 0, pa, addr - vma->filestart, start - addr) < 0){
-      return -1;
-    }
-    memset((void *)pa + (addr & ((1 << PGSHIFT) - 1)), 0, start - addr);
-  }
-
-  if(end < addr + length){
-    if((pa = walkaddr(p->pagetable, end)) == 0){
-      return -1;
-    }
-
-    if(writeback && vmawrite_helper(vma->f, 0, pa, end - vma->filestart, addr - end + length) < 0){
-      return -1;
-    }
-    memset((void *)pa, 0, addr - end + length);
-    if(addr + length == vma->end){
-      uvmunmap(p->pagetable, end, 1, 1);
-    }
-  }
-
-  if(addr + length == vma->end){
-    vma->end -= length;
-  }
-  if(addr == vma->start){
-    vma->start += length;
-  }
-
-  if(vma->start >= vma->end){
-    fileclose(vma->f);
-    vma->valid = 0;
-  }
-
-  return 0;
-}
 
 // Write to file f.
 // addr is a user virtual address.

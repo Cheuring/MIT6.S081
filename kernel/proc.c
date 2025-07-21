@@ -145,8 +145,6 @@ found:
 
   for(vma = p->VMAs; vma < &p->VMAs[NVMA]; ++vma){
     vma->valid = 0;
-    vma->prot = 0;
-    vma->flags = 0;
   }
 
   return p;

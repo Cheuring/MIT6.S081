@@ -498,6 +498,9 @@ sys_mmap(void)
     argint(3, &flags) < 0 || argfd(4, 0, &f) < 0 || argaddr(5, &offset) < 0)
     return -1;
 
+  if(flags != MAP_PRIVATE && flags != MAP_SHARED)
+    return -1;
+
   if(((flags & MAP_SHARED) && (prot & PROT_WRITE) && !f->writable) ||
       ((prot & PROT_READ) && !f->readable))
     return -1;

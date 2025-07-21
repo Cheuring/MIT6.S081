@@ -5,6 +5,11 @@
 #include "riscv.h"
 #include "defs.h"
 #include "fs.h"
+#include "spinlock.h"
+#include "sleeplock.h"
+#include "proc.h"
+#include "file.h"
+#include "fcntl.h"
 
 /*
  * the kernel's page table.
@@ -434,4 +439,97 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
   } else {
     return -1;
   }
+}
+
+uint64
+vmaread(struct VMA *vma, uint64 va)
+{
+  uint64 pa;
+  va = PGROUNDDOWN(va);
+  if(vma->f->type != FD_INODE){
+    printf("vmaread: file type error\n");
+    return -1;
+  }
+
+  ilock(vma->f->ip);
+  if(vma->flags == MAP_SHARED){
+    pa = getiva(vma->f->ip, va - vma->filestart);
+
+    if(pa == 0){
+      if((pa = (uint64)kalloc()) == 0){
+        printf("vmaread: kalloc failed\n");
+        return -1;
+      }
+      memset((void *)pa, 0, PGSIZE);
+    }
+  }else{
+
+    if((pa = (uint64)kalloc()) == 0){
+      printf("vmaread: kalloc failed\n");
+      return -1;
+    }
+
+    memset((void *)pa, 0, PGSIZE);
+    if(readi(vma->f->ip, 0, pa, va - vma->filestart, PGSIZE) < 0){
+      printf("vmaread: readi failed\n");
+      return -1;
+    }
+  }
+  iunlock(vma->f->ip);
+
+  return pa;
+}
+
+int
+vmaunmap(struct VMA *vma, uint64 addr, uint64 length, int writeback)
+{
+  if(addr < vma->start || addr + length > vma->end)
+    return -1;
+
+  uint64 start = PGROUNDUP(addr), end = PGROUNDDOWN(addr + length);
+  uint64 pa;
+  struct proc *p;
+
+  p = myproc();
+  if(writeback && vma_writeback(vma->f, start - vma->filestart, end - start) < 0){
+    return -1;
+  }
+  uvmunmap(p->pagetable, start, (end - start) / PGSIZE, !writeback);
+
+  if(start > addr){
+    if((pa = walkaddr(p->pagetable, addr)) == 0){
+      return -1;
+    }
+
+    if(writeback && vma_writeback(vma->f, addr - vma->filestart, start - addr) < 0){
+      return -1;
+    }
+  }
+
+  if(end < addr + length){
+    if((pa = walkaddr(p->pagetable, end)) == 0){
+      return -1;
+    }
+
+    if(writeback && vma_writeback(vma->f, end - vma->filestart, addr - end + length) < 0){
+      return -1;
+    }
+    if(addr + length == vma->end){
+      uvmunmap(p->pagetable, end, 1, !writeback);
+    }
+  }
+
+  if(addr + length == vma->end){
+    vma->end -= length;
+  }
+  if(addr == vma->start){
+    vma->start += length;
+  }
+
+  if(vma->start >= vma->end){
+    fileclose(vma->f);
+    vma->valid = 0;
+  }
+
+  return 0;
 }
