@@ -198,6 +198,12 @@ UPROGS=\
 
 
 
+ifeq ($(LAB),syscall)
+UPROGS += \
+	$U/_attack\
+	$U/_secret\
+	$U/_attacktest
+endif
 
 ifeq ($(LAB),$(filter $(LAB), pgtbl lock))
 UPROGS += \
